@@ -51,6 +51,17 @@ x_text, y = data_helpers.load_data_and_labels(FLAGS.positive_data_file, FLAGS.ne
 
 # Build vocabulary
 max_document_length = max([len(x.split(" ")) for x in x_text])
+
+'''
+https://stackoverflow.com/questions/40661684/tensorflow-vocabularyprocessor
+input:
+['This is a cat','This must be boy', 'This is a a dog']
+output:
+['<UNK>', 'This', 'is', 'a', 'cat', 'must', 'be', 'boy', 'dog']
+[[1 2 3 4 0]
+ [1 5 6 7 0]
+ [1 2 3 3 8]]
+'''
 vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length)
 x = np.array(list(vocab_processor.fit_transform(x_text)))
 
