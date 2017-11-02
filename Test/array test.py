@@ -7,3 +7,10 @@ data = np.array(list(zip(data1, zh_data)))
 shuffle_index = np.random.permutation(np.arange(len(data)))
 shuffled_data = data[shuffle_index]
 print(shuffled_data)
+
+
+'''
+ Slice test
+'''
+print(data1[:-5])
+print(data1[-5:])

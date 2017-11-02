@@ -65,8 +65,8 @@ def load_data_and_labels(positive_data_file, negative_data_file):
     return [x_text, y]
 
 def main():
-    x = load_data_and_labels('../data/rt-polaritydata/rt-polarity.pos', '../data/rt-polaritydata/rt-polarity.neg')
-    print(x)
+    x,y = load_data_and_labels('../data/rt-polaritydata/rt-polarity.pos', '../data/rt-polaritydata/rt-polarity.neg')
+    print(len(x))
 
 if __name__ == '__main__':
     main()

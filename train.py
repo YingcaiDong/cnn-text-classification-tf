@@ -1,10 +1,14 @@
 #! /usr/bin/env python
 
 import tensorflow as tf
+from tensorflow.contrib.keras import callbacks as call
+
+
 import numpy as np
 import os
 import time
 import datetime
+
 import data_helpers
 from text_cnn import TextCNN
 from tensorflow.contrib import learn
@@ -22,11 +26,13 @@ tf.flags.DEFINE_integer("embedding_dim", 128, "Dimensionality of character embed
 tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
 tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
-tf.flags.DEFINE_float("l2_reg_lambda", 0.0, "L2 regularization lambda (default: 0.0)")
+tf.flags.DEFINE_float("l2_reg_lambda", 0.5, "L2 regularization lambda (default: 0.0)")
 
 # Training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
-tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
+
+# disabled because implementing early stop
+# tf.flags.DEFINE_integer("num_epochs", 50, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
@@ -47,11 +53,14 @@ print("")
 
 # Load data
 print("Loading data...")
+'''
+ x_text is the data containing both positive and negative data
+ y  is the label to determine the comment is positive or negative.
+'''
 x_text, y = data_helpers.load_data_and_labels(FLAGS.positive_data_file, FLAGS.negative_data_file)
 
 # Build vocabulary
 max_document_length = max([len(x.split(" ")) for x in x_text])
-
 '''
 https://stackoverflow.com/questions/40661684/tensorflow-vocabularyprocessor
 input:
@@ -67,18 +76,36 @@ x = np.array(list(vocab_processor.fit_transform(x_text)))
 
 # Randomly shuffle data
 np.random.seed(10)
+'''
+ Shuffle the index.
+'''
 shuffle_indices = np.random.permutation(np.arange(len(y)))
+'''
+ Rearrange both array's elements position based on the shuffled index.
+'''
 x_shuffled = x[shuffle_indices]
 y_shuffled = y[shuffle_indices]
 
 # Split train/test set
 # TODO: This is very crude, should use cross-validation
+'''
+ Convert length of y to float type
+ Times 0.1 which means 90% of data used in training and 10% of data used in testing
+ Cast to int type
+ Times -1, which later used as slice in array.
+'''
 dev_sample_index = -1 * int(FLAGS.dev_sample_percentage * float(len(y)))
+'''
+ Example array has 1 to 15.
+ array[:-5] = 1 to 10
+ array[-5:] = 11 to 15
+ 
+ Again x is data y is tag
+'''
 x_train, x_dev = x_shuffled[:dev_sample_index], x_shuffled[dev_sample_index:]
 y_train, y_dev = y_shuffled[:dev_sample_index], y_shuffled[dev_sample_index:]
 print("Vocabulary Size: {:d}".format(len(vocab_processor.vocabulary_)))
 print("Train/Dev split: {:d}/{:d}".format(len(y_train), len(y_dev)))
-
 
 # Training
 # ==================================================
@@ -90,6 +117,7 @@ with tf.Graph().as_default():
     sess = tf.Session(config=session_conf)
     with sess.as_default():
         cnn = TextCNN(
+            # x_train.shape = (9596, 56), x_train.shape[1] = 56
             sequence_length=x_train.shape[1],
             num_classes=y_train.shape[1],
             vocab_size=len(vocab_processor.vocabulary_),
@@ -99,6 +127,23 @@ with tf.Graph().as_default():
             l2_reg_lambda=FLAGS.l2_reg_lambda)
 
         # Define Training procedure
+
+        ## add variable there
+        best_loss = tf.Variable(100.0, name="best_loss", trainable=False)
+        loss_value = tf.Variable(100.0, name="loss_value", trainable=False)
+        loss_check_interval = tf.Variable(100, name="loss_check_interval", trainable=False)
+
+        call.EarlyStopping().__init__(
+            monitor='loss_value',
+            min_delta=0.01,
+            patience=1,
+            verbose=0,
+            mode='auto'
+        )
+
+        # Defind number of epochs
+        num_epochs = tf.Variable(1, name="num_epochs", trainable=False)
+
         global_step = tf.Variable(0, name="global_step", trainable=False)
         optimizer = tf.train.AdamOptimizer(1e-3)
         grads_and_vars = optimizer.compute_gradients(cnn.loss)
@@ -178,10 +223,13 @@ with tf.Graph().as_default():
             print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
             if writer:
                 writer.add_summary(summaries, step)
+            return loss
 
-        # Generate batches
+        # while num_epochs == 1:
+            # Generate batches
+        print('test test !!!!!')
         batches = data_helpers.batch_iter(
-            list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
+            list(zip(x_train, y_train)), FLAGS.batch_size, num_epochs.eval())
         # Training loop. For each batch...
         for batch in batches:
             x_batch, y_batch = zip(*batch)
@@ -189,8 +237,8 @@ with tf.Graph().as_default():
             current_step = tf.train.global_step(sess, global_step)
             if current_step % FLAGS.evaluate_every == 0:
                 print("\nEvaluation:")
-                dev_step(x_dev, y_dev, writer=dev_summary_writer)
+                loss_value = dev_step(x_dev, y_dev, writer=dev_summary_writer)
                 print("")
-            if current_step % FLAGS.checkpoint_every == 0:
-                path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                print("Saved model checkpoint to {}\n".format(path))
+                if current_step % FLAGS.checkpoint_every == 0:
+                    path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                    print("Saved model checkpoint to {}\n".format(path))

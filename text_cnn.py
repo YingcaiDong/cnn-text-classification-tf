@@ -53,13 +53,20 @@ class TextCNN(object):
                 pooled_outputs.append(pooled)
 
         # Combine all the pooled features
+        # input filter_size is [3,4,5]
+        # 3*128 = 384
         num_filters_total = num_filters * len(filter_sizes)
+        # shape = [?, 1, 1, 384]
         self.h_pool = tf.concat(pooled_outputs, 3)
+        # shape = [?, 384]
         self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
 
         # Add dropout
         with tf.name_scope("dropout"):
             self.h_drop = tf.nn.dropout(self.h_pool_flat, self.dropout_keep_prob)
+
+        # Second layer
+
 
         # Final (unnormalized) scores and predictions
         with tf.name_scope("output"):
@@ -70,12 +77,23 @@ class TextCNN(object):
             b = tf.Variable(tf.constant(0.1, shape=[num_classes]), name="b")
             l2_loss += tf.nn.l2_loss(W)
             l2_loss += tf.nn.l2_loss(b)
+            '''
+             Raw scores calculate by the neuron network
+            '''
             self.scores = tf.nn.xw_plus_b(self.h_drop, W, b, name="scores")
             self.predictions = tf.argmax(self.scores, 1, name="predictions")
 
         # Calculate mean cross-entropy loss
         with tf.name_scope("loss"):
             losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.scores, labels=self.input_y)
+            '''
+               For example:
+                  # 'x' is [[1., 1.]
+                  #         [2., 2.]]
+                  tf.reduce_mean(x) ==> 1.5
+                  tf.reduce_mean(x, 0) ==> [1.5, 1.5]
+                  tf.reduce_mean(x, 1) ==> [1.,  2.]
+            '''
             self.loss = tf.reduce_mean(losses) + l2_reg_lambda * l2_loss
 
         # Accuracy
