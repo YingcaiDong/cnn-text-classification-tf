@@ -1,13 +1,11 @@
 #! /usr/bin/env python
 
 import tensorflow as tf
-from tensorflow.contrib.keras import callbacks as call
-
-
 import numpy as np
 import os
 import time
 import datetime
+import subprocess
 
 import data_helpers
 from text_cnn import TextCNN
@@ -18,6 +16,7 @@ from tensorflow.contrib import learn
 
 # Data loading params
 tf.flags.DEFINE_float("dev_sample_percentage", .1, "Percentage of the training data to use for validation")
+tf.flags.DEFINE_float("test_data_percentage", .3, "Percentage of the test data")
 tf.flags.DEFINE_string("positive_data_file", "./data/rt-polaritydata/rt-polarity.pos", "Data source for the positive data.")
 tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity.neg", "Data source for the negative data.")
 
@@ -30,12 +29,15 @@ tf.flags.DEFINE_float("l2_reg_lambda", 0.5, "L2 regularization lambda (default: 
 
 # Training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
-
-# disabled because implementing early stop
 # tf.flags.DEFINE_integer("num_epochs", 50, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
+
+# Early stop parameters
+tf.flags.DEFINE_float("delta", 0.01, "Dev data loss difference comparing to the best loss")
+tf.flags.DEFINE_integer("tolerance", 3, "max epoch allowed after delta rises")
+
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
@@ -117,7 +119,6 @@ with tf.Graph().as_default():
     sess = tf.Session(config=session_conf)
     with sess.as_default():
         cnn = TextCNN(
-            # x_train.shape = (9596, 56), x_train.shape[1] = 56
             sequence_length=x_train.shape[1],
             num_classes=y_train.shape[1],
             vocab_size=len(vocab_processor.vocabulary_),
@@ -127,23 +128,18 @@ with tf.Graph().as_default():
             l2_reg_lambda=FLAGS.l2_reg_lambda)
 
         # Define Training procedure
+        loss_value = tf.placeholder(dtype=tf.float32, shape=1, name="loss_value")
+        loss_value = 100.0
+        best_loss = tf.placeholder(dtype=tf.float32, shape=1, name="best_loss")
+        best_loss = 100.0
+        cnt = tf.placeholder(dtype=tf.int16, shape=1, name="cnt")
+        cnt = 0
+        epochs = tf.placeholder(dtype=tf.int16, shape=1, name="epochs")
+        epochs = 1
+        flag_save_after_best_loss = tf.placeholder(dtype=tf.bool,shape=1, name="flag_best_loss")
+        flag_save_after_best_loss = False
 
         ## add variable there
-        best_loss = tf.Variable(100.0, name="best_loss", trainable=False)
-        loss_value = tf.Variable(100.0, name="loss_value", trainable=False)
-        loss_check_interval = tf.Variable(100, name="loss_check_interval", trainable=False)
-
-        call.EarlyStopping().__init__(
-            monitor='loss_value',
-            min_delta=0.01,
-            patience=1,
-            verbose=0,
-            mode='auto'
-        )
-
-        # Defind number of epochs
-        num_epochs = tf.Variable(1, name="num_epochs", trainable=False)
-
         global_step = tf.Variable(0, name="global_step", trainable=False)
         optimizer = tf.train.AdamOptimizer(1e-3)
         grads_and_vars = optimizer.compute_gradients(cnn.loss)
@@ -225,20 +221,42 @@ with tf.Graph().as_default():
                 writer.add_summary(summaries, step)
             return loss
 
-        # while num_epochs == 1:
-            # Generate batches
-        print('test test !!!!!')
-        batches = data_helpers.batch_iter(
-            list(zip(x_train, y_train)), FLAGS.batch_size, num_epochs.eval())
-        # Training loop. For each batch...
-        for batch in batches:
-            x_batch, y_batch = zip(*batch)
-            train_step(x_batch, y_batch)
-            current_step = tf.train.global_step(sess, global_step)
-            if current_step % FLAGS.evaluate_every == 0:
-                print("\nEvaluation:")
-                loss_value = dev_step(x_dev, y_dev, writer=dev_summary_writer)
-                print("")
-                if current_step % FLAGS.checkpoint_every == 0:
-                    path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                    print("Saved model checkpoint to {}\n".format(path))
+        while epochs == 1:
+            batches = data_helpers.batch_iter(
+                list(zip(x_train, y_train)), FLAGS.batch_size)
+            # Training loop. For each batch...
+            for batch in batches:
+                x_batch, y_batch = zip(*batch)
+                train_step(x_batch, y_batch)
+                current_step = tf.train.global_step(sess, global_step)
+                if current_step % FLAGS.evaluate_every == 0:
+                    print("\nEvaluation:")
+                    loss_value = dev_step(x_dev, y_dev, writer=dev_summary_writer)
+                    print("")
+                    '''
+                     Find the best (smallest) loss value
+                    '''
+                    if best_loss > loss_value:
+                        best_loss = loss_value
+                        epochs = 1
+                        cnt = 0
+                        print("Found new Best loss = " + str(best_loss))
+                        path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                        print("Saved model checkpoint on best loss to {}\n".format(path))
+                        flag_save_after_best_loss = True
+                    else:
+                        if cnt > FLAGS.tolerance:
+                            path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                            print("Saved model checkpoint to {}\n".format(path))
+                            print("Training data over-fits, training stop")
+                            epochs = 0
+                            cnt = 0
+                            sess.close()
+                            exit()
+                        else:
+                            cnt += 1
+                            epochs = 1
+                            print("Best loss = " + str(best_loss) + "\tloss = " + str(loss_value))
+                    if current_step % FLAGS.checkpoint_every == 0 and flag_save_after_best_loss is False:
+                        path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                        print("Saved model checkpoint to {}\n".format(path))

@@ -65,36 +65,35 @@ def load_data_and_labels(positive_data_file, negative_data_file):
     return [x_text, y]
 
 
-def batch_iter(data, batch_size, num_epochs, shuffle=True):
+def batch_iter(data, batch_size, shuffle=True):
     """
     Generates a batch iterator for a dataset.
     """
     data = np.array(data)
     data_size = len(data)
     num_batches_per_epoch = int((len(data)-1)/batch_size) + 1
-    for epoch in range(num_epochs):
-        # Shuffle the data at each epoch
-        if shuffle:
-            '''
-            np.arrange()
-            Return evenly spaced values within a given interval. Interval end by data_size, step by default = 1
-            Examples
-            --------
-            >>> np.arange(3)
-            array([0, 1, 2])
-            ====================================
-            np.random.permutation()
-            Examples
-            --------
-            >>> np.random.permutation(10)
-            >>> np.random.permutation([1, 4, 9, 12, 15])
-            array([15,  1,  9,  4, 12])
-            '''
-            shuffle_indices = np.random.permutation(np.arange(data_size))
-            shuffled_data = data[shuffle_indices]
-        else:
-            shuffled_data = data
-        for batch_num in range(num_batches_per_epoch):
-            start_index = batch_num * batch_size
-            end_index = min((batch_num + 1) * batch_size, data_size)
-            yield shuffled_data[start_index:end_index]
+    # Shuffle the data at each epoch
+    if shuffle:
+        '''
+        np.arrange()
+        Return evenly spaced values within a given interval. Interval end by data_size, step by default = 1
+        Examples
+        --------
+        >>> np.arange(3)
+        array([0, 1, 2])
+        ====================================
+        np.random.permutation()
+        Examples
+        --------
+        >>> np.random.permutation(10)
+        >>> np.random.permutation([1, 4, 9, 12, 15])
+        array([15,  1,  9,  4, 12])
+        '''
+        shuffle_indices = np.random.permutation(np.arange(data_size))
+        shuffled_data = data[shuffle_indices]
+    else:
+        shuffled_data = data
+    for batch_num in range(num_batches_per_epoch):
+        start_index = batch_num * batch_size
+        end_index = min((batch_num + 1) * batch_size, data_size)
+        yield shuffled_data[start_index:end_index]
