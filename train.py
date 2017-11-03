@@ -5,7 +5,7 @@ import numpy as np
 import os
 import time
 import datetime
-import subprocess
+
 
 import data_helpers
 from text_cnn import TextCNN
@@ -35,8 +35,7 @@ tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many ste
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
 
 # Early stop parameters
-tf.flags.DEFINE_float("delta", 0.01, "Dev data loss difference comparing to the best loss")
-tf.flags.DEFINE_integer("tolerance", 3, "max epoch allowed after delta rises")
+tf.flags.DEFINE_integer("patience", 3, "max epoch allowed after delta rises")
 
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
@@ -138,6 +137,7 @@ with tf.Graph().as_default():
         epochs = 1
         flag_save_after_best_loss = tf.placeholder(dtype=tf.bool,shape=1, name="flag_best_loss")
         flag_save_after_best_loss = False
+        output_str = ""
 
         ## add variable there
         global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -242,21 +242,23 @@ with tf.Graph().as_default():
                         cnt = 0
                         print("Found new Best loss = " + str(best_loss))
                         path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                        print("Saved model checkpoint on best loss to {}\n".format(path))
+                        output_str = "Saved model checkpoint on best loss to " + str(path) + "\n"
+                        print(output_str)
                         flag_save_after_best_loss = True
                     else:
-                        if cnt > FLAGS.tolerance:
+                        if cnt > FLAGS.patience:
                             path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                            print("Saved model checkpoint to {}\n".format(path))
                             print("Training data over-fits, training stop")
                             epochs = 0
                             cnt = 0
+                            print(output_str)
                             sess.close()
                             exit()
                         else:
                             cnt += 1
                             epochs = 1
-                            print("Best loss = " + str(best_loss) + "\tloss = " + str(loss_value))
+                            print("Best loss = " + str(best_loss) + "\tloss = " + str(loss_value) + "\n")
                     if current_step % FLAGS.checkpoint_every == 0 and flag_save_after_best_loss is False:
                         path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                        print("Saved model checkpoint to {}\n".format(path))
+                        output_str = "Saved model checkpoint on best loss to " + str(path) + "\n"
+                        print(output_str)
