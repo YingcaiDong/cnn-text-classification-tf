@@ -1,7 +1,6 @@
 import numpy as np
 import re
-import itertools
-from collections import Counter
+import pandas as pd
 
 
 def clean_str(string):
@@ -31,38 +30,45 @@ def clean_str(string):
     string = re.sub(r"\)", " \) ", string)
     string = re.sub(r"\?", " \? ", string)
     '''
-    空白符\s，两个至多个
+    empty space \s，maximum 2 empty space
     '''
     string = re.sub(r"\s{2,}", " ", string)
-    # strip default token: space, hence split words with space, convert to lowercase.
+    # strip default token: space, hence strip front and end space, convert words to lowercase.
     return string.strip().lower()
 
 
-def load_data_and_labels(positive_data_file, negative_data_file):
+def load_data_and_labels(data_file):
     """
     Loads MR polarity data from files, splits the data into words and generates labels.
     Returns split sentences and labels.
     """
     # Load data from files
-    positive_examples = list(open(positive_data_file, "r").readlines())
+    data = pd.read_csv(data_file)
+    reviews = data["Text"]
+    scores = data["Score"]
     '''
         For each line of comment, strip lead and trail white space
     '''
-    positive_examples = [s.strip() for s in positive_examples]
-    negative_examples = list(open(negative_data_file, "r").readlines())
-    negative_examples = [s.strip() for s in negative_examples]
+    reviews = [s.strip() for s in reviews]
     # Split by words
-    x_text = positive_examples + negative_examples
-    x_text = [clean_str(sent) for sent in x_text]
+    x_text = [clean_str(sent) for sent in reviews]
     # Generate labels
-    positive_labels = [[0, 1] for _ in positive_examples]
-    negative_labels = [[1, 0] for _ in negative_examples]
+    y_labels = []
+    for index, score in enumerate(scores):
+        y_labels.append({
+            1: [1, 0, 0, 0, 0],
+            2: [0, 1, 0, 0, 0],
+            3: [0, 0, 1, 0, 0],
+            4: [0, 0, 0, 1, 0],
+            5: [0, 0, 0, 0, 1]
+        }[score])
+        if index%1000 == 0:
+            print("Load " + str(index) + " data into the memory\n")
     '''
         Join a sequence of arrays along an existing axis.
         The arrays must have the same shape, except in the dimension 0.
     '''
-    y = np.concatenate([positive_labels, negative_labels], 0)
-    return [x_text, y]
+    return [x_text, y_labels]
 
 
 def batch_iter(data, batch_size, shuffle=True):
